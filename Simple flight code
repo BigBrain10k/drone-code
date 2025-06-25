@@ -1,0 +1,91 @@
+import time
+from pymavlink import mavutil
+
+def connect_to_fc(connection_string, baudrate):
+    master = mavutil.mavlink_connection(connection_string, baud=baudrate)
+    master.wait_heartbeat()
+    return master
+
+#def set_mode_guided(master):
+#    master.set_mode_guided()
+#    print("Set mode to GUIDED.")
+#    # Wait until the mode is confirmed
+#    while True:
+#        msg = master.recv_match(type='HEARTBEAT', blocking=True)
+#        if msg:
+#            mode = mavutil.mode_string_v10(msg)
+#            if mode == 'GUIDED':
+#                print("Mode confirmed: GUIDED")
+#                break
+#        time.sleep(1)
+
+def arm_vehicle(master):
+    master.arducopter_arm()
+    print("Arming vehicle...")
+    master.motors_armed_wait()
+    print("Vehicle armed.")
+
+def takeoff(master, target_altitude):
+    master.mav.command_long_send(
+        master.target_system,
+        master.target_component,
+        mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
+        0, 0, 0, 0, 0, 0, 0, target_altitude
+    )
+    print(f"Takeoff command sent. Target altitude: {target_altitude} meters.")
+
+    # Wait until the vehicle reaches the target altitude
+    while True:
+        msg = master.recv_match(type='GLOBAL_POSITION_INT', blocking=True)
+        if msg:
+            altitude = msg.relative_alt / 1000.0  # Convert from mm to meters
+            print(f"Current altitude: {altitude:.2f} meters")
+            if altitude >= target_altitude * 0.95:  # 95% of target altitude
+                print("Reached target altitude.")
+                break
+        time.sleep(1)
+
+def land(master):
+    master.mav.command_long_send(
+        master.target_system,
+        master.target_component,
+        mavutil.mavlink.MAV_CMD_NAV_LAND,
+        0, 0, 0, 0, 0, 0, 0, 0
+    )
+    print("Land command sent.")
+
+    # Wait until the vehicle lands
+    while True:
+        msg = master.recv_match(type='GLOBAL_POSITION_INT', blocking=True)
+        if msg:
+            altitude = msg.relative_alt / 1000.0  # Convert from mm to meters
+            print(f"Current altitude: {altitude:.2f} meters")
+            if altitude <= 0.1:  # Consider landed if altitude is less than or equal to 0.1 meters
+                print("Vehicle landed.")
+                break
+        time.sleep(1)
+
+def main():
+    connection_string = '/dev/serial0'
+    baudrate = 115200
+    target_altitude = 10  # Desired takeoff altitude in meters
+    
+    master = connect_to_fc(connection_string, baudrate)
+    print("Connected to FC, setting mode to GUIDED and arming...")
+
+#    set_mode_guided(master)
+    arm_vehicle(master)
+    
+    print("Taking off...")
+    takeoff(master, target_altitude)
+    print("Takeoff complete.")
+    
+    time.sleep(10)  # Hover for 10 seconds before landing
+    
+    print("Landing...")
+    land(master)
+    print("Landing complete.")
+
+if __name__ == '__main__':
+    main()
+
